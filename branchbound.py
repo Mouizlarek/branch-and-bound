@@ -1,96 +1,76 @@
-import numpy as np
-import pandas as pd
-import cvxpy as cp
-import matplotlib.pyplot as plt
 import streamlit as st
 from streamlit_option_menu import option_menu
+import cvxpy as cp
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# --- Fonction pour générer un DataFrame d'objets ---
-def create_items_dataframe(n, values, weights):
-    df = pd.DataFrame({
-        "Valeur": values,
-        "Poids": weights,
-        "Valeur/Poids": np.array(values) / np.array(weights)
-    })
-    return df
+st.set_page_config(page_title="Branch and Bound Knapsack", layout="wide")
 
-# --- Résolution du problème du sac à dos via cvxpy (relaxation continue) ---
-def solve_knapsack_cvxpy(df, max_weight):
-    n = len(df)
-    x = cp.Variable(n)
-
-    values = df["Valeur"].values
-    weights = df["Poids"].values
-
-    # Objectif : maximiser la valeur totale
+def branch_and_bound_knapsack(values, weights, capacity):
+    n = len(values)
+    x = cp.Variable(n, boolean=True)
     objective = cp.Maximize(values @ x)
+    constraints = [weights @ x <= capacity]
+    prob = cp.Problem(objective, constraints)
+    prob.solve(solver=cp.GLPK_MI)
+    return x.value, prob.value
 
-    # Contraintes : poids total <= max_weight, 0 <= x <= 1 (relaxation)
-    constraints = [
-        weights @ x <= max_weight,
-        x >= 0,
-        x <= 1
-    ]
-
-    problem = cp.Problem(objective, constraints)
-    problem.solve()
-
-    # Résultat et décision
-    selected = x.value
-    return selected, problem.value
-
-# --- Visualisation des résultats ---
-def plot_results(df, selected, max_weight):
-    fig, ax = plt.subplots(figsize=(8,5))
-    indices = np.arange(len(df))
-    ax.bar(indices, df["Valeur"], label="Valeur")
-    ax.bar(indices, df["Poids"], label="Poids", alpha=0.5)
-    ax.bar(indices, selected * df["Valeur"], label="Valeur sélectionnée", alpha=0.7)
-    ax.set_xlabel("Objets")
-    ax.set_ylabel("Valeur / Poids")
-    ax.legend()
-    ax.set_title(f"Sélection continue (relaxation) - Poids max = {max_weight}")
-    st.pyplot(fig)
-
-# --- Interface Streamlit ---
 def main():
-    st.title("Problème du sac à dos 0-1 avec CVXPY et Streamlit")
-
     with st.sidebar:
-        choice = option_menu("Menu", ["Saisie manuelle", "Exemple automatique"], 
-                             icons=["pencil", "box-seam"], menu_icon="cast", default_index=0)
-
-    if choice == "Saisie manuelle":
-        n = st.number_input("Nombre d'objets", min_value=1, step=1, value=5)
-
-        values = []
-        weights = []
-        for i in range(int(n)):
-            val = st.number_input(f"Valeur de l'objet {i+1}", value=10.0)
-            w = st.number_input(f"Poids de l'objet {i+1}", value=5.0)
-            values.append(val)
-            weights.append(w)
-
-        max_weight = st.number_input("Poids maximal du sac", min_value=0.1, value=20.0)
-
-    else:
-        # Exemple automatique
-        n = 6
-        values = [60, 100, 120, 80, 30, 50]
-        weights = [10, 20, 30, 40, 50, 10]
-        max_weight = 100
-        st.write("Exemple avec ces objets :")
-        df_example = create_items_dataframe(n, values, weights)
-        st.dataframe(df_example)
-
-    df = create_items_dataframe(n, values, weights)
-    selected, max_profit = solve_knapsack_cvxpy(df, max_weight)
-
-    st.write(f"**Profit maximal (relaxé) :** {max_profit:.2f}")
-    st.write("**Sélection (valeurs entre 0 et 1, relaxation) :**")
-    st.write(selected)
-
-    plot_results(df, selected, max_weight)
+        choice = option_menu("Menu", ["Entrée des données", "Résultat"],
+                             icons=["pencil", "graph-up"], menu_icon="cast", default_index=0)
+    
+    if choice == "Entrée des données":
+        st.header("Entrer les données du problème sac à dos")
+        n = st.number_input("Nombre d'objets", min_value=1, max_value=20, value=5)
+        
+        st.markdown("## Valeurs et poids des objets")
+        default_data = {"Valeur": [10, 20, 30, 40, 50][:n],
+                        "Poids": [1, 3, 4, 5, 7][:n]}
+        df = pd.DataFrame(default_data)
+        
+        # 🔧 Correction ici
+        edited_df = st.data_editor(df, num_rows="dynamic")
+        
+        capacity = st.number_input("Capacité maximale du sac à dos", min_value=1, value=10)
+        
+        if st.button("Résoudre"):
+            values = np.array(edited_df["Valeur"])
+            weights = np.array(edited_df["Poids"])
+            solution, val = branch_and_bound_knapsack(values, weights, capacity)
+            st.session_state["solution"] = solution
+            st.session_state["valeur"] = val
+            st.session_state["values"] = values
+            st.session_state["weights"] = weights
+            st.session_state["capacity"] = capacity
+            st.success("Résolution terminée! Passez à l’onglet Résultat.")
+            
+    elif choice == "Résultat":
+        if "solution" not in st.session_state:
+            st.warning("Veuillez d'abord saisir les données et résoudre le problème.")
+            return
+        st.header("Résultats")
+        solution = st.session_state["solution"]
+        values = st.session_state["values"]
+        weights = st.session_state["weights"]
+        capacity = st.session_state["capacity"]
+        val = st.session_state["valeur"]
+        
+        st.write(f"Valeur optimale : **{val:.2f}**")
+        poids_total = np.sum(weights * solution)
+        st.write(f"Poids total : **{poids_total:.2f}** / {capacity}")
+        
+        chosen = [f"Objet {i+1}" for i, x in enumerate(solution) if x > 0.5]
+        st.write("Objets choisis :", chosen)
+        
+        fig, ax = plt.subplots()
+        ax.bar(range(len(solution)), solution, color='skyblue')
+        ax.set_xticks(range(len(solution)))
+        ax.set_xticklabels([f"O{i+1}" for i in range(len(solution))])
+        ax.set_ylabel("Choix (1=oui, 0=non)")
+        ax.set_title("Objets sélectionnés")
+        st.pyplot(fig)
 
 if __name__ == "__main__":
     main()
