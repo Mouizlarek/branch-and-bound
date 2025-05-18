@@ -162,6 +162,6 @@ def knapsack(n, W, p, w):
 
 
 # 🏁 Programme principal
-if _name_ == "_main_":
+if __name__ == "__main__":
     n, W, p, w = get_input()
     knapsack(n, W, p, w)
