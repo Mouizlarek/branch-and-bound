@@ -13,7 +13,7 @@ def branch_and_bound_knapsack(values, weights, capacity):
     objective = cp.Maximize(values @ x)
     constraints = [weights @ x <= capacity]
     prob = cp.Problem(objective, constraints)
-    prob.solve(solver=cp.GLPK_MI)
+    prob.solve()
     return x.value, prob.value
 
 def main():
